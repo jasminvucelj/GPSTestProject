@@ -33,6 +33,7 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
     final int LONG_REFRESH_TIME = 5 * 60 * 1000; // 5 min => ms
     final int SHORT_REFRESH_TIME = 15 * 1000; // 15 s => ms
     final int REFRESH_DISTANCE = 100;
+    final float ZOOM_LEVEL = 6;
 
     double currentDistance = 0;
 
@@ -58,11 +59,12 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        // init map
         mapFragment = (MapFragment) getFragmentManager()
                 .findFragmentById(R.id.mapFragment);
         mapFragment.getMapAsync(this);
 
-
+        // init views
         btnStartDay = (Button) findViewById(R.id.btnStartDay);
         btnStartTracking = (Button) findViewById(R.id.btnStartTracking);
         btnSendNote = (Button) findViewById(R.id.btnSendNote);
@@ -70,8 +72,8 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
         textViewDB = (TextView) findViewById(R.id.textViewDB);
         textViewDistance = (TextView) findViewById(R.id.textViewDistance);
 
+        // init database
         dbHandler = new DatabaseHandler(this);
-
         dbHandler.deleteAll(); // TEST
 
         // ask permissions
@@ -189,7 +191,7 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
 
         googleMap.addMarker(new MarkerOptions().position(locationAsLatLng)
                 .title(note.getText()));
-        googleMap.moveCamera(CameraUpdateFactory.newLatLng(locationAsLatLng));
+        googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(locationAsLatLng, ZOOM_LEVEL));
     }
 
 
