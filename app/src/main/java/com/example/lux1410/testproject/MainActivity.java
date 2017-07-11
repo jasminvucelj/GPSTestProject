@@ -33,7 +33,8 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
     final int LONG_REFRESH_TIME = 5 * 60 * 1000; // 5 min => ms
     final int SHORT_REFRESH_TIME = 15 * 1000; // 15 s => ms
     final int REFRESH_DISTANCE = 100;
-    final float ZOOM_LEVEL = 6;
+    final float ZOOM_LEVEL = 5;
+    final double DISTANCE_UPDATE_THRESHOLD = 343 * SHORT_REFRESH_TIME / 1000;
 
     double currentDistance = 0;
 
@@ -132,13 +133,19 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
         locationListenerConstant = new LocationListener() {
             @Override
             public void onLocationChanged(Location location) {
-                // recalculate distance
+                // calculate new distance
                 double tempDistance = newDistance(location, lastLocationConstant);
-                currentDistance += tempDistance;
-                textViewDistance.setText(getString(R.string.current_distance) + "\t" + String.valueOf(currentDistance));
-                // Toast.makeText(MainActivity.this, "New distance:" + "\t" + String.valueOf(tempDistance), Toast.LENGTH_SHORT).show();
-                // update last location
-                lastLocationConstant = location;
+
+                // TODO
+                if (tempDistance < DISTANCE_UPDATE_THRESHOLD) {
+
+                    // update distance
+                    currentDistance += tempDistance;
+                    textViewDistance.setText(getString(R.string.current_distance) + "\t" + String.valueOf(currentDistance));
+                    // update last location
+                    lastLocationConstant = location;
+                }
+
             }
 
             @Override
@@ -158,7 +165,6 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
         };
     }
 
-
     private double newDistance(Location newLoc, Location lastLoc) {
         if(lastLoc == null) { // 1. point => 0
             return 0;
@@ -166,32 +172,6 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
         else { // not 1. point => distance (lastLoc, newLoc)
             return (double) lastLoc.distanceTo(newLoc);
         }
-    }
-
-
-    private void sendNote(Location location) {
-        Note note = new Note(noteText.getText().toString(), location);
-
-        if(dbHandler.addNote(note)) {
-            Toast.makeText(this, "Successfully inserted: " + note.toString(), Toast.LENGTH_SHORT).show();
-        }
-        else {
-            Toast.makeText(this, "Insertion failed" + note.toString(), Toast.LENGTH_SHORT).show();
-        }
-
-        // print database
-        textViewDB.setText(dbHandler.databaseToString());
-
-        setMarker(note);
-    }
-
-
-    private void setMarker(Note note) {
-        LatLng locationAsLatLng = new LatLng(note.getLatitude(), note.getLongitude());
-
-        googleMap.addMarker(new MarkerOptions().position(locationAsLatLng)
-                .title(note.getText()));
-        googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(locationAsLatLng, ZOOM_LEVEL));
     }
 
 
@@ -246,7 +226,7 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
             btnStartTracking.setEnabled(true);
 
             //noinspection MissingPermission
-            locationManagerPeriodic.requestLocationUpdates("gps", LONG_REFRESH_TIME, 0, locationListenerPeriodic); // 5 min
+            locationManagerPeriodic.requestLocationUpdates(LocationManager.GPS_PROVIDER, LONG_REFRESH_TIME, 0, locationListenerPeriodic); // 5 min
         }
     }
 
@@ -263,8 +243,35 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
             btnStartTracking.setText(getString(R.string.stop_tracking));
 
             //noinspection MissingPermission
-            locationManagerConstant.requestLocationUpdates("gps", SHORT_REFRESH_TIME, REFRESH_DISTANCE, locationListenerConstant); // 15 s / 100 m
+            locationManagerConstant.requestLocationUpdates(LocationManager.GPS_PROVIDER, SHORT_REFRESH_TIME, REFRESH_DISTANCE, locationListenerConstant); // 15 s & 100 m
         }
+    }
+
+
+    private void sendNote(Location location) {
+        Note note = new Note(noteText.getText().toString(), location);
+
+        if(dbHandler.addNote(note)) {
+            Toast.makeText(this, "Successfully inserted: " + note.toString(), Toast.LENGTH_SHORT).show();
+        }
+        else {
+            Toast.makeText(this, "Insertion failed" + note.toString(), Toast.LENGTH_SHORT).show();
+        }
+
+        // display data
+        textViewDB.setText(dbHandler.databaseToString());
+
+        // place marker on map
+        setMarker(note);
+    }
+
+
+    private void setMarker(Note note) {
+        LatLng locationAsLatLng = new LatLng(note.getLatitude(), note.getLongitude());
+
+        googleMap.addMarker(new MarkerOptions().position(locationAsLatLng)
+                .title(note.getText()));
+        googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(locationAsLatLng, ZOOM_LEVEL));
     }
 
 
