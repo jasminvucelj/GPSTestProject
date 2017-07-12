@@ -4,6 +4,7 @@ import android.Manifest;
 import android.app.Activity;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.icu.util.Calendar;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
@@ -12,6 +13,7 @@ import android.os.Bundle;
 import android.provider.Settings;
 import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
+import android.text.format.Time;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
@@ -26,6 +28,8 @@ import com.google.android.gms.maps.OnMapReadyCallback;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.MarkerOptions;
 
+import java.util.GregorianCalendar;
+
 import static android.content.ContentValues.TAG;
 
 public class MainActivity extends Activity implements OnMapReadyCallback {
@@ -36,6 +40,7 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
     final float ZOOM_LEVEL = 5;
     final double DISTANCE_UPDATE_THRESHOLD = 343 * SHORT_REFRESH_TIME / 1000;
 
+    long nextPeriodicUpdateTime;
     double currentDistance = 0;
 
     DatabaseHandler dbHandler;
@@ -43,15 +48,15 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
     GoogleMap googleMap;
     MapFragment mapFragment;
 
-    Button btnStartDay, btnStartTracking, btnSendNote;
+    Button btnStartDay, btnSendNote;
     EditText noteText;
     TextView textViewDistance, textViewDB;
 
-    boolean dayStarted = false, trackingOn = false;
+    boolean dayStarted = false;
 
-    Location lastLocationPeriodic, lastLocationConstant = null;
-    LocationManager locationManagerPeriodic, locationManagerConstant;
-    LocationListener locationListenerPeriodic, locationListenerConstant;
+    Location lastLocationPeriodic = null, lastLocationConstant = null;
+    LocationManager locationManagerConstant;
+    LocationListener locationListenerConstant;
 
 
     @Override
@@ -60,6 +65,7 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+
         // init map
         mapFragment = (MapFragment) getFragmentManager()
                 .findFragmentById(R.id.mapFragment);
@@ -67,11 +73,11 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
 
         // init views
         btnStartDay = (Button) findViewById(R.id.btnStartDay);
-        btnStartTracking = (Button) findViewById(R.id.btnStartTracking);
         btnSendNote = (Button) findViewById(R.id.btnSendNote);
         noteText = (EditText) findViewById(R.id.noteText);
         textViewDB = (TextView) findViewById(R.id.textViewDB);
         textViewDistance = (TextView) findViewById(R.id.textViewDistance);
+
 
         // init database
         dbHandler = new DatabaseHandler(this);
@@ -104,44 +110,30 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
     }
 
     private void initLocations() {
-        locationManagerPeriodic = (LocationManager) getSystemService(LOCATION_SERVICE);
         locationManagerConstant = (LocationManager) getSystemService(LOCATION_SERVICE);
-
-        locationListenerPeriodic = new LocationListener() {
-            @Override
-            public void onLocationChanged(Location location) {
-                Toast.makeText(MainActivity.this, "Received location: " + location.getLatitude() + " " + location.getLongitude(), Toast.LENGTH_SHORT).show();
-                lastLocationPeriodic = location;
-            }
-
-            @Override
-            public void onStatusChanged(String provider, int status, Bundle extras) {
-
-            }
-
-            @Override
-            public void onProviderEnabled(String provider) {
-
-            }
-
-            @Override
-            public void onProviderDisabled(String provider) {
-                startActivity(new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS));
-            }
-        };
 
         locationListenerConstant = new LocationListener() {
             @Override
             public void onLocationChanged(Location location) {
+
+                // TODO: update na promjenu vremena na uređaju
+
+                // if 1st periodic location || location time >= nextPeriodicUpdateTime => new periodic location
+                if(lastLocationPeriodic == null || location.getTime() >= nextPeriodicUpdateTime ) {
+                    lastLocationPeriodic = location;
+                    nextPeriodicUpdateTime = location.getTime() + LONG_REFRESH_TIME;
+
+                    //Toast.makeText(MainActivity.this, "Received location: " + location.getLatitude() + " " + location.getLongitude(), Toast.LENGTH_SHORT).show();
+
+                }
+
                 // calculate new distance
                 double tempDistance = newDistance(location, lastLocationConstant);
 
-                // TODO
                 if (tempDistance < DISTANCE_UPDATE_THRESHOLD) {
-
                     // update distance
                     currentDistance += tempDistance;
-                    textViewDistance.setText(getString(R.string.current_distance) + "\t" + String.valueOf(currentDistance));
+                    textViewDistance.setText(getString(R.string.current_distance) + "\t" + String.valueOf(currentDistance) + " m");
                     // update last location
                     lastLocationConstant = location;
                 }
@@ -176,19 +168,11 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
 
 
     private void btnConfig(){
-        // btnStartDay - toggle periodic tracking
+        // btnStartDay - toggle tracking
         btnStartDay.setOnClickListener(new View.OnClickListener(){
             @Override
             public void onClick(View v){
                 dayStartedToggle();
-            }
-        });
-
-        // btnStartTracking - toggle constant tracking
-        btnStartTracking.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                trackingToggle();
             }
         });
 
@@ -201,7 +185,32 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
         });
     }
 
+    private void dayStartedToggle() {
+        if (dayStarted) { // turn off tracking
+            dayStarted = false;
 
+            btnSendNote.setEnabled(false);
+            btnStartDay.setText(getString(R.string.start_day));
+
+//            locationManagerPeriodic.removeUpdates(locationListenerPeriodic);
+            locationManagerConstant.removeUpdates(locationListenerConstant);
+        }
+        else {
+            dayStarted = true;
+
+            btnSendNote.setEnabled(true);
+            btnStartDay.setText(getString(R.string.stop_day));
+
+            //noinspection MissingPermission
+//            locationManagerPeriodic.requestLocationUpdates(LocationManager.GPS_PROVIDER, LONG_REFRESH_TIME, 0, locationListenerPeriodic); // 5 min
+
+            //noinspection MissingPermission
+            locationManagerConstant.requestLocationUpdates(LocationManager.GPS_PROVIDER, SHORT_REFRESH_TIME, REFRESH_DISTANCE, locationListenerConstant); // 15 s & 100 m
+        }
+    }
+
+
+    /*
     private void dayStartedToggle() {
         if (dayStarted) { // turn off periodic tracking
             dayStarted = false;
@@ -246,6 +255,7 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
             locationManagerConstant.requestLocationUpdates(LocationManager.GPS_PROVIDER, SHORT_REFRESH_TIME, REFRESH_DISTANCE, locationListenerConstant); // 15 s & 100 m
         }
     }
+    */
 
 
     private void sendNote(Location location) {
