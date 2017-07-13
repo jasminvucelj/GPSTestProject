@@ -4,7 +4,7 @@ import android.Manifest;
 import android.app.Activity;
 import android.content.Intent;
 import android.content.pm.PackageManager;
-import android.icu.util.Calendar;
+import java.util.Calendar;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
@@ -13,7 +13,6 @@ import android.os.Bundle;
 import android.provider.Settings;
 import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
-import android.text.format.Time;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
@@ -28,8 +27,6 @@ import com.google.android.gms.maps.OnMapReadyCallback;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.MarkerOptions;
 
-import java.util.GregorianCalendar;
-
 import static android.content.ContentValues.TAG;
 
 public class MainActivity extends Activity implements OnMapReadyCallback {
@@ -38,6 +35,7 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
     final int SHORT_REFRESH_TIME = 15 * 1000; // 15 s => ms
     final int REFRESH_DISTANCE = 100;
     final float ZOOM_LEVEL = 5;
+    final float ACCURACY_THRESHOLD = 100;
     final double DISTANCE_UPDATE_THRESHOLD = 343 * SHORT_REFRESH_TIME / 1000;
 
     long nextPeriodicUpdateTime;
@@ -55,8 +53,8 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
     boolean dayStarted = false;
 
     Location lastLocationPeriodic = null, lastLocationConstant = null;
-    LocationManager locationManagerConstant;
-    LocationListener locationListenerConstant;
+    LocationManager locationManagerConstant, locationManagerSingle;
+    LocationListener locationListenerConstant, locationListenerSingle;
 
 
     @Override
@@ -64,7 +62,6 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
 
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-
 
         // init map
         mapFragment = (MapFragment) getFragmentManager()
@@ -78,10 +75,10 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
         textViewDB = (TextView) findViewById(R.id.textViewDB);
         textViewDistance = (TextView) findViewById(R.id.textViewDistance);
 
-
         // init database
         dbHandler = new DatabaseHandler(this);
         dbHandler.deleteAll(); // TEST
+
 
         // ask permissions
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
@@ -110,21 +107,54 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
     }
 
     private void initLocations() {
+
+        locationManagerSingle = (LocationManager) getSystemService(LOCATION_SERVICE);
+
+        locationListenerSingle = new LocationListener() {
+            @Override
+            public void onLocationChanged(Location location) {
+                
+                // TODO
+                if(locationIsAcceptable(location)) {
+                    lastLocationPeriodic = location;
+                    // TODO zatrazi novi update
+                }
+                else {
+                    //noinspection MissingPermission
+                    locationManagerSingle.requestSingleUpdate(LocationManager.GPS_PROVIDER, locationListenerSingle, null);
+                }
+
+            }
+
+            @Override
+            public void onStatusChanged(String provider, int status, Bundle extras) {
+
+            }
+
+            @Override
+            public void onProviderEnabled(String provider) {
+
+            }
+
+            @Override
+            public void onProviderDisabled(String provider) {
+                startActivity(new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS));
+            }
+        };
+
         locationManagerConstant = (LocationManager) getSystemService(LOCATION_SERVICE);
 
         locationListenerConstant = new LocationListener() {
             @Override
             public void onLocationChanged(Location location) {
 
-                // TODO: update na promjenu vremena na uređaju
+                // update time
+                Calendar calendar = Calendar.getInstance();
 
-                // if 1st periodic location || location time >= nextPeriodicUpdateTime => new periodic location
-                if(lastLocationPeriodic == null || location.getTime() >= nextPeriodicUpdateTime ) {
+                // if 1st periodic location || time >= nextPeriodicUpdateTime => new periodic location
+                if(lastLocationPeriodic == null || calendar.getTimeInMillis() >= nextPeriodicUpdateTime ) {
                     lastLocationPeriodic = location;
-                    nextPeriodicUpdateTime = location.getTime() + LONG_REFRESH_TIME;
-
-                    //Toast.makeText(MainActivity.this, "Received location: " + location.getLatitude() + " " + location.getLongitude(), Toast.LENGTH_SHORT).show();
-
+                    nextPeriodicUpdateTime = calendar.getTimeInMillis() + LONG_REFRESH_TIME;
                 }
 
                 // calculate new distance
@@ -155,6 +185,11 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
                 startActivity(new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS));
             }
         };
+    }
+
+    private boolean locationIsAcceptable(Location location) { // acceptable = not null & accuracy < 100 m
+        if (location == null || location.getAccuracy() < ACCURACY_THRESHOLD) return false;
+        return true;
     }
 
     private double newDistance(Location newLoc, Location lastLoc) {
@@ -192,7 +227,7 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
             btnSendNote.setEnabled(false);
             btnStartDay.setText(getString(R.string.start_day));
 
-//            locationManagerPeriodic.removeUpdates(locationListenerPeriodic);
+            locationManagerSingle.removeUpdates(locationListenerSingle);
             locationManagerConstant.removeUpdates(locationListenerConstant);
         }
         else {
@@ -202,63 +237,20 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
             btnStartDay.setText(getString(R.string.stop_day));
 
             //noinspection MissingPermission
-//            locationManagerPeriodic.requestLocationUpdates(LocationManager.GPS_PROVIDER, LONG_REFRESH_TIME, 0, locationListenerPeriodic); // 5 min
-
+            locationManagerSingle.requestSingleUpdate(LocationManager.GPS_PROVIDER, locationListenerSingle, null);
             //noinspection MissingPermission
             locationManagerConstant.requestLocationUpdates(LocationManager.GPS_PROVIDER, SHORT_REFRESH_TIME, REFRESH_DISTANCE, locationListenerConstant); // 15 s & 100 m
         }
     }
-
-
-    /*
-    private void dayStartedToggle() {
-        if (dayStarted) { // turn off periodic tracking
-            dayStarted = false;
-            btnSendNote.setEnabled(false);
-            btnStartDay.setText(getString(R.string.start_day));
-
-            locationManagerPeriodic.removeUpdates(locationListenerPeriodic);
-
-            // dayStarted = false => disable tracking
-            trackingOn = false;
-            btnStartTracking.setEnabled(false);
-            btnStartTracking.setText(getString(R.string.start_tracking));
-
-            locationManagerConstant.removeUpdates(locationListenerConstant);
-        }
-        else { // turn on periodic tracking
-            dayStarted = true;
-            btnSendNote.setEnabled(true);
-            btnStartDay.setText(getString(R.string.stop_day));
-
-            // dayStarted = true => enable tracking
-            btnStartTracking.setEnabled(true);
-
-            //noinspection MissingPermission
-            locationManagerPeriodic.requestLocationUpdates(LocationManager.GPS_PROVIDER, LONG_REFRESH_TIME, 0, locationListenerPeriodic); // 5 min
-        }
-    }
-
-
-    private void trackingToggle() {
-        if(trackingOn){ // turn off constant tracking
-            trackingOn = false;
-            btnStartTracking.setText(getString(R.string.start_tracking));
-
-            locationManagerConstant.removeUpdates(locationListenerConstant);
-        }
-        else { // turn on constant tracking
-            trackingOn = true;
-            btnStartTracking.setText(getString(R.string.stop_tracking));
-
-            //noinspection MissingPermission
-            locationManagerConstant.requestLocationUpdates(LocationManager.GPS_PROVIDER, SHORT_REFRESH_TIME, REFRESH_DISTANCE, locationListenerConstant); // 15 s & 100 m
-        }
-    }
-    */
 
 
     private void sendNote(Location location) {
+        // location ok?
+        if (!locationIsAcceptable(location)) {
+            Toast.makeText(this, "Accurate location not available", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
         Note note = new Note(noteText.getText().toString(), location);
 
         if(dbHandler.addNote(note)) {
