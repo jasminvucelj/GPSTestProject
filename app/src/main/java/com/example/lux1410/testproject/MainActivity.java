@@ -2,6 +2,8 @@ package com.example.lux1410.testproject;
 
 import android.Manifest;
 import android.app.Activity;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import java.util.Calendar;
@@ -39,7 +41,7 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
     final float ACCURACY_THRESHOLD = 100;
     final double DISTANCE_UPDATE_THRESHOLD = 343 * SHORT_REFRESH_TIME / 1000;
 
-    long nextUpdateTime;
+    static long nextUpdateTime;
     double currentDistance = 0;
 
     DatabaseHandler dbHandler;
@@ -56,8 +58,21 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
     boolean dayStarted = false;
 
     Location lastLocationPeriodic = null, lastLocationConstant = null;
-    LocationManager locationManagerConstant, locationManagerPeriodic;
-    LocationListener locationListenerConstant, locationListenerPeriodic;
+    LocationManager locationManagerConstant;
+    static LocationManager locationManagerPeriodic;
+    LocationListener locationListenerConstant;
+    static LocationListener locationListenerPeriodic;
+
+
+/*    static class TimeChangedReceiver extends BroadcastReceiver {
+
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (Calendar.getInstance().getTimeInMillis() > nextUpdateTime) { // time changed => request update
+                requestGPSUpdatePeriodic(locationManagerPeriodic, locationListenerPeriodic);
+            }
+        }
+    }*/
 
 
     @Override
@@ -69,6 +84,7 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
         initMap();
         initViews();
         initDatabaseHandler();
+
 
         // ask permissions
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
@@ -82,10 +98,25 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
             return;
         }
 
+
         initCountDownTimer();
         initLocations();
         btnConfig();
 
+    }
+
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        switch (requestCode){
+            case 10:
+                initCountDownTimer();
+                initLocations();
+                btnConfig();
+                break;
+            default:
+                break;
+        }
     }
 
 
@@ -120,62 +151,24 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
     }
 
 
-    @Override
-    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
-        switch (requestCode){
-            case 10:
-                initCountDownTimer();
-                initLocations();
-                btnConfig();
-                break;
-            default:
-                break;
-        }
-    }
-
-
     /**
      * Sets up the countdown timer.
      */
     private void initCountDownTimer() {
         countDownTimer = new CountDownTimer(LONG_REFRESH_TIME, TIMER_INTERVAL) {
             @Override
-            public void onTick(long millisUntilFinished) { // check if time has been changed
-                if (Calendar.getInstance().getTimeInMillis() > nextUpdateTime) { // time changed => request update, restart timer
-                    stopTimer();
+            public void onTick(long millisUntilFinished) {
+                if (Calendar.getInstance().getTimeInMillis() > nextUpdateTime) { // time changed => request update
+                    requestGPSUpdatePeriodic(locationManagerPeriodic, locationListenerPeriodic);
                 }
             }
 
             @Override
-            public void onFinish() { // timer expires, request update, set next update time
-                finishTimer();
+            public void onFinish() { // timer expires => request update
+                requestGPSUpdatePeriodic(locationManagerPeriodic, locationListenerPeriodic);
             }
         };
     };
-
-
-    /**
-     * Requests a single update, and interrupts the timer.
-     */
-    private void stopTimer() {
-        countDownTimer.cancel();
-        //noinspection MissingPermission
-        locationManagerPeriodic.requestSingleUpdate(LocationManager.GPS_PROVIDER,
-                locationListenerPeriodic,
-                null);
-    }
-
-
-    /**
-     * On timer expiring, requests a single update and sets a new update time.
-     */
-    private void finishTimer() {
-        //noinspection MissingPermission
-        locationManagerPeriodic.requestSingleUpdate(LocationManager.GPS_PROVIDER,
-                locationListenerPeriodic,
-                null);
-        nextUpdateTime = Calendar.getInstance().getTimeInMillis() + LONG_REFRESH_TIME;
-    }
 
 
     /**
@@ -234,6 +227,30 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
 
 
     /**
+     * Requests a single GPS update.
+     * @param lm location manager
+     * @param ll location listener
+     */
+    static private void requestGPSUpdatePeriodic(LocationManager lm, LocationListener ll) {
+        //noinspection MissingPermission
+        lm.requestSingleUpdate(LocationManager.GPS_PROVIDER, ll, null);
+    }
+
+
+    /**
+     * Requests constant GPS updates with a given refresh time/distance.
+     * @param lm location manager
+     * @param ll location listener
+     * @param refreshTime min time interval (ms)
+     * @param refreshDistance min distance interval (m)
+     */
+    static private void requestGPSUpdateConstant(LocationManager lm, LocationListener ll, int refreshTime, int refreshDistance) {
+        //noinspection MissingPermission
+        lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, refreshTime, refreshDistance, ll);
+    }
+
+
+    /**
      * Stores location if acceptable (and restarts the timer), otherwise requests a new one.
      * @param location last received periodic location.
      */
@@ -247,10 +264,7 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
             Toast.makeText(this, "Received location: " + location.getLatitude() + "\t" + location.getLongitude(), Toast.LENGTH_SHORT).show();
         }
         else {
-            //noinspection MissingPermission
-            locationManagerPeriodic.requestSingleUpdate(LocationManager.GPS_PROVIDER,
-                    locationListenerPeriodic,
-                    null);
+            requestGPSUpdatePeriodic(locationManagerPeriodic, locationListenerPeriodic);
         }
     }
 
@@ -280,8 +294,8 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
      * @param location the location to be checked.
      * @return true if location is acceptable, false if not.
      */
-    private boolean locationIsAcceptable(Location location) { // acceptable = not null & accuracy < 100 m
-        if (location == null || location.getAccuracy() < ACCURACY_THRESHOLD) return false;
+    private boolean locationIsAcceptable(Location location) { // acceptable = not null & accuracy > 100 m
+        if (location == null || location.getAccuracy() > ACCURACY_THRESHOLD) return false;
         return true;
     }
 
@@ -305,7 +319,7 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
 
     /**
      * Sets up the onClickListeners for btnStartDay (toggle tracking) and btnSendNote
-     * (sends/saves to DB the note with the last saved periodic location).
+     * (sends/saves to DB the note with the last periodic location).
      */
     private void btnConfig(){
         // btnStartDay - toggle tracking
@@ -330,7 +344,7 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
      * Toggles both constant and periodic tracking.
      */
     private void dayStartedToggle() {
-        if (dayStarted) { // turn off tracking
+        if (dayStarted) { // turn off
             dayStarted = false;
 
             btnSendNote.setEnabled(false);
@@ -342,16 +356,14 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
             locationManagerConstant.removeUpdates(locationListenerConstant);
         }
 
-        else {
+        else { // turn on
             dayStarted = true;
 
             btnSendNote.setEnabled(true);
             btnStartDay.setText(getString(R.string.stop_day));
 
-            //noinspection MissingPermission
-            locationManagerPeriodic.requestSingleUpdate(LocationManager.GPS_PROVIDER, locationListenerPeriodic, null);
-            //noinspection MissingPermission
-            locationManagerConstant.requestLocationUpdates(LocationManager.GPS_PROVIDER, SHORT_REFRESH_TIME, REFRESH_DISTANCE, locationListenerConstant); // 15 s & 100 m
+            requestGPSUpdatePeriodic(locationManagerPeriodic, locationListenerPeriodic);
+            requestGPSUpdateConstant(locationManagerConstant, locationListenerConstant, SHORT_REFRESH_TIME, REFRESH_DISTANCE);
         }
     }
 
@@ -404,3 +416,6 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
         this.googleMap = googleMap;
     }
 }
+
+
+
