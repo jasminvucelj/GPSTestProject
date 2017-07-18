@@ -11,5 +11,6 @@
     <string name="current_distance">Current distance:</string>
     <string name="google_android_map_api_key">AIzaSyA9g9-_6lcvPII7XrO8cT6o0hC9XhzbCRw</string>
     <string name="location_bad">Accurate location not available</string>
+    <string name="not_enough_locations">Current distance not available yet (not enough valid locations).</string>
 </resources>
 

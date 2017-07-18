@@ -2,11 +2,13 @@ package com.example.lux1410.testproject;
 
 import android.Manifest;
 import android.app.Activity;
-import android.content.BroadcastReceiver;
-import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+
+import java.util.ArrayList;
 import java.util.Calendar;
+import java.util.List;
+
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
@@ -31,11 +33,10 @@ import com.google.android.gms.maps.model.MarkerOptions;
 
 public class MainActivity extends Activity implements OnMapReadyCallback {
 
-    int test = 0;
-
     final int LONG_REFRESH_TIME = 5 * 60 * 1000; // 5 min => ms
     final int SHORT_REFRESH_TIME = 15 * 1000; // 15 s => ms
     final int REFRESH_DISTANCE = 100;
+    final int OUTLIER_LOCATION_BUFFER_SIZE = 10;
     final int TIMER_INTERVAL = 5 * 1000;
     final float ZOOM_LEVEL = 5;
     final float ACCURACY_THRESHOLD = 100;
@@ -57,11 +58,13 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
 
     boolean dayStarted = false;
 
+    List<Location> constantLocationBuffer;
+
     Location lastLocationPeriodic = null, lastLocationConstant = null;
     LocationManager locationManagerConstant;
-    static LocationManager locationManagerPeriodic;
+    LocationManager locationManagerPeriodic;
     LocationListener locationListenerConstant;
-    static LocationListener locationListenerPeriodic;
+    LocationListener locationListenerPeriodic;
 
 
 /*    static class TimeChangedReceiver extends BroadcastReceiver {
@@ -257,6 +260,7 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
     private void periodicLocationChanged(Location location) {
 
         if(location.getAccuracy() < ACCURACY_THRESHOLD) {
+            btnSendNote.setEnabled(true);
             lastLocationPeriodic = location;
             nextUpdateTime = Calendar.getInstance().getTimeInMillis() + LONG_REFRESH_TIME;
             countDownTimer.start();
@@ -270,11 +274,38 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
 
 
     /**
-     * Updates total distance if new location is valid (within threshold).
+     * Updates total distance based on locations received through constant tracking.
+     * Uses an IQR method-based algorithm to detect and remove outlier (false) locations.
      * @param location last received constant location.
      */
     private void constantLocationChanged(Location location) {
-        // calculate new distance
+        // add new location to buffer
+        constantLocationBuffer.add(location);
+
+        if (constantLocationBuffer.size() >= OUTLIER_LOCATION_BUFFER_SIZE) {
+            // remove outlier points from buffer
+            constantLocationBuffer = LocationOutlierFinder.removeOutliers(constantLocationBuffer);
+
+            // "pop" the oldest location from buffer
+            Location tempLocation = constantLocationBuffer.get(0);
+            constantLocationBuffer.remove(0);
+
+            // update distance
+            currentDistance += newDistance(tempLocation, lastLocationConstant);;
+            textViewDistance.setText(getString(R.string.current_distance) + "\t" +
+                    String.valueOf(currentDistance) + " m");
+            // update last location
+            lastLocationConstant = tempLocation;
+
+        }
+
+        else if (currentDistance == 0) {
+            textViewDistance.setText(getString(R.string.not_enough_locations));
+        }
+
+        ////////////////////////////////////////////////////////////////////////////////////////////
+
+        /*// calculate new distance
         double tempDistance = newDistance(location, lastLocationConstant);
 
         if (tempDistance < DISTANCE_UPDATE_THRESHOLD) {
@@ -284,7 +315,7 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
                     String.valueOf(currentDistance) + " m");
             // update last location
             lastLocationConstant = location;
-        }
+        }*/
     }
 
 
@@ -352,14 +383,18 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
 
             countDownTimer.cancel();
 
+            constantLocationBuffer = new ArrayList<>();
+
+            lastLocationPeriodic = null;
+            lastLocationConstant = null;
+
             locationManagerPeriodic.removeUpdates(locationListenerPeriodic);
             locationManagerConstant.removeUpdates(locationListenerConstant);
         }
 
         else { // turn on
             dayStarted = true;
-
-            btnSendNote.setEnabled(true);
+            
             btnStartDay.setText(getString(R.string.stop_day));
 
             requestGPSUpdatePeriodic(locationManagerPeriodic, locationListenerPeriodic);
