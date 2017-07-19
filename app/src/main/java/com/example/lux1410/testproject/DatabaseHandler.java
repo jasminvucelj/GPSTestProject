@@ -5,11 +5,7 @@ import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
-import android.util.Log;
 
-/**
- * Created by lux1410 on 7/6/2017.
- */
 
 public class DatabaseHandler extends SQLiteOpenHelper {
 
@@ -26,6 +22,7 @@ public class DatabaseHandler extends SQLiteOpenHelper {
         super(context, TABLE_NAME, null, VERSION);
     }
 
+
     @Override
     public void onCreate(SQLiteDatabase db) {
         String query =
@@ -37,11 +34,13 @@ public class DatabaseHandler extends SQLiteOpenHelper {
         db.execSQL(query);
     }
 
+
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
         db.execSQL("DROP IF TABLE EXISTS " + TABLE_NAME);
         onCreate(db);
     }
+
 
     public void deleteAll() {
         SQLiteDatabase db = getWritableDatabase();
@@ -49,6 +48,7 @@ public class DatabaseHandler extends SQLiteOpenHelper {
                 "DELETE FROM " + TABLE_NAME + " WHERE 1;";
         db.execSQL(query);
     }
+
 
     // add note to db
     boolean addNote(Note note) {
@@ -69,6 +69,7 @@ public class DatabaseHandler extends SQLiteOpenHelper {
         }
     }
 
+
     // delete note from db
     void deleteNote(String text) {
         SQLiteDatabase db = getWritableDatabase();
@@ -76,6 +77,7 @@ public class DatabaseHandler extends SQLiteOpenHelper {
                 COL_TEXT + "=\"" + text + "\";";
         db.execSQL(query);
     }
+
 
     String databaseToString() {
         StringBuilder sb = new StringBuilder();

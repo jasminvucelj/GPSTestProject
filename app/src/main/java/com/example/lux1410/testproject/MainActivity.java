@@ -2,11 +2,13 @@ package com.example.lux1410.testproject;
 
 import android.Manifest;
 import android.app.Activity;
-import android.content.BroadcastReceiver;
-import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+
+import java.util.ArrayList;
 import java.util.Calendar;
+import java.util.List;
+
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
@@ -29,17 +31,16 @@ import com.google.android.gms.maps.OnMapReadyCallback;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.MarkerOptions;
 
-public class MainActivity extends Activity implements OnMapReadyCallback {
 
-    int test = 0;
+public class MainActivity extends Activity implements OnMapReadyCallback {
 
     final int LONG_REFRESH_TIME = 5 * 60 * 1000; // 5 min => ms
     final int SHORT_REFRESH_TIME = 15 * 1000; // 15 s => ms
     final int REFRESH_DISTANCE = 100;
+    final int OUTLIER_LOCATION_BUFFER_SIZE = 10;
     final int TIMER_INTERVAL = 5 * 1000;
-    final float ZOOM_LEVEL = 5;
+    final float ZOOM_LEVEL = 9;
     final float ACCURACY_THRESHOLD = 100;
-    final double DISTANCE_UPDATE_THRESHOLD = 343 * SHORT_REFRESH_TIME / 1000;
 
     static long nextUpdateTime;
     double currentDistance = 0;
@@ -57,11 +58,13 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
 
     boolean dayStarted = false;
 
+    List<Location> constantLocationBuffer = new ArrayList<>();
+
     Location lastLocationPeriodic = null, lastLocationConstant = null;
     LocationManager locationManagerConstant;
-    static LocationManager locationManagerPeriodic;
+    LocationManager locationManagerPeriodic;
     LocationListener locationListenerConstant;
-    static LocationListener locationListenerPeriodic;
+    LocationListener locationListenerPeriodic;
 
 
 /*    static class TimeChangedReceiver extends BroadcastReceiver {
@@ -255,35 +258,69 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
      * @param location last received periodic location.
      */
     private void periodicLocationChanged(Location location) {
-
-        if(location.getAccuracy() < ACCURACY_THRESHOLD) {
+        if (location.getAccuracy() < ACCURACY_THRESHOLD) {
+            btnSendNote.setEnabled(true);
             lastLocationPeriodic = location;
             nextUpdateTime = Calendar.getInstance().getTimeInMillis() + LONG_REFRESH_TIME;
             countDownTimer.start();
 
-            Toast.makeText(this, "Received location: " + location.getLatitude() + "\t" + location.getLongitude(), Toast.LENGTH_SHORT).show();
-        }
-        else {
+            Toast.makeText(this, "Received location: " +
+                            location.getLatitude() +
+                            "\t" +
+                            location.getLongitude(),
+                    Toast.LENGTH_SHORT).show();
+        } else {
             requestGPSUpdatePeriodic(locationManagerPeriodic, locationListenerPeriodic);
         }
     }
 
 
     /**
-     * Updates total distance if new location is valid (within threshold).
+     * Updates total distance based on locations received through constant tracking.
+     * Uses an IQR method-based algorithm to detect and remove outlier ("false") locations.
      * @param location last received constant location.
      */
     private void constantLocationChanged(Location location) {
-        // calculate new distance
-        double tempDistance = newDistance(location, lastLocationConstant);
+        // add new location to buffer
+        constantLocationBuffer.add(location);
 
-        if (tempDistance < DISTANCE_UPDATE_THRESHOLD) {
-            // update distance
-            currentDistance += tempDistance;
-            textViewDistance.setText(getString(R.string.current_distance) + "\t" +
-                    String.valueOf(currentDistance) + " m");
-            // update last location
-            lastLocationConstant = location;
+        if (constantLocationBuffer.size() >= OUTLIER_LOCATION_BUFFER_SIZE) {
+            // remove outlier points from buffer
+            constantLocationBuffer = LocationOutlierFinder.removeOutliers(constantLocationBuffer);
+
+            if(constantLocationBuffer.size() > 0 && constantLocationBuffer.contains(location)) {
+                // update distance
+                if (currentDistance == 0) {
+                    // distance of the entire list
+                    currentDistance = locationListDistance(constantLocationBuffer);
+                } else {
+                    // distance from last saved location to the current one
+                    currentDistance += locationDistance(lastLocationConstant, location);
+                }
+
+                // make room in the buffer - remove oldest location
+                constantLocationBuffer.remove(0);
+
+                textViewDistance.setText(getString(R.string.distance) +
+                        "\t" +
+                        String.valueOf(currentDistance) +
+                        " m");
+
+                // update last saved location
+                lastLocationConstant = location;
+
+            }
+            else {
+                Toast.makeText(this,
+                        "Location rejected: " +
+                                location.getLatitude() +
+                                "\t" +
+                                location.getLongitude(),
+                        Toast.LENGTH_SHORT).show();
+            }
+        }
+        else if (currentDistance == 0) {
+            textViewDistance.setText(getString(R.string.not_enough_locations));
         }
     }
 
@@ -302,18 +339,38 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
 
     /**
      * Returns the distance between two locations.
-     * @param newLoc new location.
-     * @param lastLoc last saved location.
-     * @return 0 if last location is undefined, otherwise the distance from last location to the
-     * new one.
+     * @param loc1 first location.
+     * @param loc2 second location.
+     * @return 0 if either location is undefined, otherwise the distance between them.
      */
-    private double newDistance(Location newLoc, Location lastLoc) {
-        if(newLoc == null || lastLoc == null) {
+    private double locationDistance(Location loc1, Location loc2) {
+        if(loc1 == null || loc2 == null) {
             return 0;
         }
         else {
-            return (double) lastLoc.distanceTo(newLoc);
+            return (double) loc2.distanceTo(loc1);
         }
+    }
+
+
+    /**
+     * Returns the total distance between locations in a list.
+     * @param locList list of locations.
+     * @return 0 if the list has less than 2 elements, otherwise the total distance.
+     */
+    private double locationListDistance(List<Location> locList) {
+        int size = locList.size();
+        if(size <= 1) {
+            return 0;
+        }
+        else {
+            double result = 0;
+            for(int i = 0; i < size-1; i++) {
+                result += locationDistance(locList.get(i), locList.get(i+1));
+            }
+            return result;
+        }
+
     }
 
 
@@ -352,6 +409,9 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
 
             countDownTimer.cancel();
 
+            lastLocationPeriodic = null;
+            lastLocationConstant = null;
+
             locationManagerPeriodic.removeUpdates(locationListenerPeriodic);
             locationManagerConstant.removeUpdates(locationListenerConstant);
         }
@@ -359,8 +419,10 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
         else { // turn on
             dayStarted = true;
 
-            btnSendNote.setEnabled(true);
             btnStartDay.setText(getString(R.string.stop_day));
+
+            currentDistance = 0;
+            constantLocationBuffer = new ArrayList<>();
 
             requestGPSUpdatePeriodic(locationManagerPeriodic, locationListenerPeriodic);
             requestGPSUpdateConstant(locationManagerConstant, locationListenerConstant, SHORT_REFRESH_TIME, REFRESH_DISTANCE);
@@ -377,17 +439,25 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
     private void sendNote(String text, Location location) {
         // location ok?
         if (!locationIsAcceptable(location)) {
-            Toast.makeText(this, R.string.location_bad, Toast.LENGTH_SHORT).show();
+            Toast.makeText(this,
+                    R.string.location_bad,
+                    Toast.LENGTH_SHORT).show();
             return;
         }
 
         Note note = new Note(text, location);
 
         if(dbHandler.addNote(note)) {
-            Toast.makeText(this, "Successfully inserted: " + note.toString(), Toast.LENGTH_SHORT).show();
+            Toast.makeText(this,
+                    "Successfully inserted: " +
+                            note.toString(),
+                    Toast.LENGTH_SHORT).show();
         }
         else {
-            Toast.makeText(this, "Insertion failed" + note.toString(), Toast.LENGTH_SHORT).show();
+            Toast.makeText(this,
+                    "Insertion failed" +
+                            note.toString(),
+                    Toast.LENGTH_SHORT).show();
         }
 
         // display data
