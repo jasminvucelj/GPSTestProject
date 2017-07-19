@@ -31,6 +31,7 @@ import com.google.android.gms.maps.OnMapReadyCallback;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.MarkerOptions;
 
+
 public class MainActivity extends Activity implements OnMapReadyCallback {
 
     final int LONG_REFRESH_TIME = 5 * 60 * 1000; // 5 min => ms
@@ -38,9 +39,8 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
     final int REFRESH_DISTANCE = 100;
     final int OUTLIER_LOCATION_BUFFER_SIZE = 10;
     final int TIMER_INTERVAL = 5 * 1000;
-    final float ZOOM_LEVEL = 5;
+    final float ZOOM_LEVEL = 9;
     final float ACCURACY_THRESHOLD = 100;
-    final double DISTANCE_UPDATE_THRESHOLD = 343 * SHORT_REFRESH_TIME / 1000;
 
     static long nextUpdateTime;
     double currentDistance = 0;
@@ -58,7 +58,7 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
 
     boolean dayStarted = false;
 
-    List<Location> constantLocationBuffer;
+    List<Location> constantLocationBuffer = new ArrayList<>();
 
     Location lastLocationPeriodic = null, lastLocationConstant = null;
     LocationManager locationManagerConstant;
@@ -258,16 +258,18 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
      * @param location last received periodic location.
      */
     private void periodicLocationChanged(Location location) {
-
-        if(location.getAccuracy() < ACCURACY_THRESHOLD) {
+        if (location.getAccuracy() < ACCURACY_THRESHOLD) {
             btnSendNote.setEnabled(true);
             lastLocationPeriodic = location;
             nextUpdateTime = Calendar.getInstance().getTimeInMillis() + LONG_REFRESH_TIME;
             countDownTimer.start();
 
-            Toast.makeText(this, "Received location: " + location.getLatitude() + "\t" + location.getLongitude(), Toast.LENGTH_SHORT).show();
-        }
-        else {
+            Toast.makeText(this, "Received location: " +
+                            location.getLatitude() +
+                            "\t" +
+                            location.getLongitude(),
+                    Toast.LENGTH_SHORT).show();
+        } else {
             requestGPSUpdatePeriodic(locationManagerPeriodic, locationListenerPeriodic);
         }
     }
@@ -275,7 +277,7 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
 
     /**
      * Updates total distance based on locations received through constant tracking.
-     * Uses an IQR method-based algorithm to detect and remove outlier (false) locations.
+     * Uses an IQR method-based algorithm to detect and remove outlier ("false") locations.
      * @param location last received constant location.
      */
     private void constantLocationChanged(Location location) {
@@ -286,36 +288,40 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
             // remove outlier points from buffer
             constantLocationBuffer = LocationOutlierFinder.removeOutliers(constantLocationBuffer);
 
-            // "pop" the oldest location from buffer
-            Location tempLocation = constantLocationBuffer.get(0);
-            constantLocationBuffer.remove(0);
+            if(constantLocationBuffer.size() > 0 && constantLocationBuffer.contains(location)) {
+                // update distance
+                if (currentDistance == 0) {
+                    // distance of the entire list
+                    currentDistance = locationListDistance(constantLocationBuffer);
+                } else {
+                    // distance from last saved location to the current one
+                    currentDistance += locationDistance(lastLocationConstant, location);
+                }
 
-            // update distance
-            currentDistance += newDistance(tempLocation, lastLocationConstant);;
-            textViewDistance.setText(getString(R.string.current_distance) + "\t" +
-                    String.valueOf(currentDistance) + " m");
-            // update last location
-            lastLocationConstant = tempLocation;
+                // make room in the buffer - remove oldest location
+                constantLocationBuffer.remove(0);
 
+                textViewDistance.setText(getString(R.string.distance) +
+                        "\t" +
+                        String.valueOf(currentDistance) +
+                        " m");
+
+                // update last saved location
+                lastLocationConstant = location;
+
+            }
+            else {
+                Toast.makeText(this,
+                        "Location rejected: " +
+                                location.getLatitude() +
+                                "\t" +
+                                location.getLongitude(),
+                        Toast.LENGTH_SHORT).show();
+            }
         }
-
         else if (currentDistance == 0) {
             textViewDistance.setText(getString(R.string.not_enough_locations));
         }
-
-        ////////////////////////////////////////////////////////////////////////////////////////////
-
-        /*// calculate new distance
-        double tempDistance = newDistance(location, lastLocationConstant);
-
-        if (tempDistance < DISTANCE_UPDATE_THRESHOLD) {
-            // update distance
-            currentDistance += tempDistance;
-            textViewDistance.setText(getString(R.string.current_distance) + "\t" +
-                    String.valueOf(currentDistance) + " m");
-            // update last location
-            lastLocationConstant = location;
-        }*/
     }
 
 
@@ -333,18 +339,38 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
 
     /**
      * Returns the distance between two locations.
-     * @param newLoc new location.
-     * @param lastLoc last saved location.
-     * @return 0 if last location is undefined, otherwise the distance from last location to the
-     * new one.
+     * @param loc1 first location.
+     * @param loc2 second location.
+     * @return 0 if either location is undefined, otherwise the distance between them.
      */
-    private double newDistance(Location newLoc, Location lastLoc) {
-        if(newLoc == null || lastLoc == null) {
+    private double locationDistance(Location loc1, Location loc2) {
+        if(loc1 == null || loc2 == null) {
             return 0;
         }
         else {
-            return (double) lastLoc.distanceTo(newLoc);
+            return (double) loc2.distanceTo(loc1);
         }
+    }
+
+
+    /**
+     * Returns the total distance between locations in a list.
+     * @param locList list of locations.
+     * @return 0 if the list has less than 2 elements, otherwise the total distance.
+     */
+    private double locationListDistance(List<Location> locList) {
+        int size = locList.size();
+        if(size <= 1) {
+            return 0;
+        }
+        else {
+            double result = 0;
+            for(int i = 0; i < size-1; i++) {
+                result += locationDistance(locList.get(i), locList.get(i+1));
+            }
+            return result;
+        }
+
     }
 
 
@@ -383,8 +409,6 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
 
             countDownTimer.cancel();
 
-            constantLocationBuffer = new ArrayList<>();
-
             lastLocationPeriodic = null;
             lastLocationConstant = null;
 
@@ -394,8 +418,11 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
 
         else { // turn on
             dayStarted = true;
-            
+
             btnStartDay.setText(getString(R.string.stop_day));
+
+            currentDistance = 0;
+            constantLocationBuffer = new ArrayList<>();
 
             requestGPSUpdatePeriodic(locationManagerPeriodic, locationListenerPeriodic);
             requestGPSUpdateConstant(locationManagerConstant, locationListenerConstant, SHORT_REFRESH_TIME, REFRESH_DISTANCE);
@@ -412,17 +439,25 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
     private void sendNote(String text, Location location) {
         // location ok?
         if (!locationIsAcceptable(location)) {
-            Toast.makeText(this, R.string.location_bad, Toast.LENGTH_SHORT).show();
+            Toast.makeText(this,
+                    R.string.location_bad,
+                    Toast.LENGTH_SHORT).show();
             return;
         }
 
         Note note = new Note(text, location);
 
         if(dbHandler.addNote(note)) {
-            Toast.makeText(this, "Successfully inserted: " + note.toString(), Toast.LENGTH_SHORT).show();
+            Toast.makeText(this,
+                    "Successfully inserted: " +
+                            note.toString(),
+                    Toast.LENGTH_SHORT).show();
         }
         else {
-            Toast.makeText(this, "Insertion failed" + note.toString(), Toast.LENGTH_SHORT).show();
+            Toast.makeText(this,
+                    "Insertion failed" +
+                            note.toString(),
+                    Toast.LENGTH_SHORT).show();
         }
 
         // display data

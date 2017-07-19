@@ -2,9 +2,6 @@ package com.example.lux1410.testproject;
 
 import android.location.Location;
 
-/**
- * Created by lux1410 on 7/4/2017.
- */
 
 public class Note {
     private String text;
@@ -55,4 +52,5 @@ public class Note {
     public String locationToString() {
         return "lat: " + latitude + ", lon: " + longitude;
     }
+
 }
