@@ -8,6 +8,7 @@ import android.content.pm.PackageManager;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.List;
+import java.util.Locale;
 
 import android.location.Location;
 import android.location.LocationListener;
@@ -265,7 +266,7 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
 
             Toast.makeText(this, "Received location: " +
                             location.getLatitude() +
-                            "\t" +
+                            ", " +
                             location.getLongitude(),
                     Toast.LENGTH_SHORT).show();
         } else {
@@ -304,7 +305,7 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
 
                 textViewDistance.setText(getString(R.string.distance) +
                         "\t" +
-                        String.valueOf(currentDistance) +
+                        String.format(Locale.getDefault(), "%.2f", currentDistance) +
                         " m");
 
                 // update last saved location
@@ -315,7 +316,7 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
                 Toast.makeText(this,
                         "Location rejected: " +
                                 location.getLatitude() +
-                                "\t" +
+                                ", " +
                                 location.getLongitude(),
                         Toast.LENGTH_SHORT).show();
             }
