@@ -37,7 +37,7 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
     final int LONG_REFRESH_TIME = 5 * 60 * 1000; // 5 min => ms
     final int SHORT_REFRESH_TIME = 15 * 1000; // 15 s => ms
     final int REFRESH_DISTANCE = 100;
-    final int OUTLIER_LOCATION_BUFFER_SIZE = 10;
+    final int OUTLIER_LOCATION_BUFFER_SIZE = 10; // 10
     final int TIMER_INTERVAL = 5 * 1000;
     final float ZOOM_LEVEL = 9;
     final float ACCURACY_THRESHOLD = 100;
@@ -105,7 +105,6 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
         initCountDownTimer();
         initLocations();
         btnConfig();
-
     }
 
 
@@ -283,6 +282,8 @@ public class MainActivity extends Activity implements OnMapReadyCallback {
     private void constantLocationChanged(Location location) {
         // add new location to buffer
         constantLocationBuffer.add(location);
+
+        //Toast.makeText(this, String.valueOf(constantLocationBuffer.size()), Toast.LENGTH_SHORT).show();
 
         if (constantLocationBuffer.size() >= OUTLIER_LOCATION_BUFFER_SIZE) {
             // remove outlier points from buffer
